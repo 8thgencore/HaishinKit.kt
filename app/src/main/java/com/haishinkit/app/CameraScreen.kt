@@ -66,6 +66,17 @@ fun CameraScreen(
     controller: CameraController,
 ) {
     val context = LocalContext.current
+    
+    // Create camera helper
+    val camera2Helper = remember { Camera2Helper(context) }
+    
+    // Start background thread for camera
+    DisposableEffect(Unit) {
+        camera2Helper.startBackgroundThread()
+        onDispose {
+            camera2Helper.stopBackgroundThread()
+        }
+    }
 
     // HaishinKit
     val connectionState = rememberConnectionState {
@@ -78,6 +89,8 @@ fun CameraScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            // Safely detach camera before destruction
+            camera2Helper.safelyDetachCurrentCamera(stream)
             connectionState.dispose()
         }
     }
@@ -136,45 +149,13 @@ fun CameraScreen(
         }, onVideoPermissionStatus = { state ->
             when (state.status) {
                 PermissionStatus.Granted -> {
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            stream.attachVideo(MultiCamera2Source(context))
-                            (stream.videoSource as? MultiCamera2Source)?.apply {
-                                try {
-                                    open(0, CameraCharacteristics.LENS_FACING_BACK)
-                                    open(1, CameraCharacteristics.LENS_FACING_FRONT)
-                                    getVideoByChannel(1)?.apply {
-                                        frame = Rect(20, 20, 90 + 20, 160 + 20)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error while setting up multi-camera: ${e.message}", e)
-                                    // If multi-camera setup fails, revert to single camera
-                                    stream.attachVideo(null)
-                                    stream.attachVideo(Camera2Source(context).apply {
-                                        try {
-                                            open(CameraCharacteristics.LENS_FACING_BACK)
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Error while opening main camera: ${e.message}", e)
-                                        }
-                                    })
-                                }
-                            }
-                        } else {
-                            stream.attachVideo(Camera2Source(context).apply {
-                                try {
-                                    open(CameraCharacteristics.LENS_FACING_BACK)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error while opening camera: ${e.message}", e)
-                                }
-                            })
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "General error while setting up camera: ${e.message}", e)
-                    }
+                    // Use our helper class for safe camera attachment
+                    val useMultiCamera = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P
+                    camera2Helper.safelyAttachCameraSource(stream, useMultiCamera)
                 }
 
                 is PermissionStatus.Denied -> {
-                    stream.attachVideo(null)
+                    camera2Helper.safelyDetachCurrentCamera(stream)
                 }
             }
         })
