@@ -60,7 +60,18 @@ class ConnectionState(
     }
 
     fun createStream(context: Context): RtmpStream {
-        return RtmpStream(context, connection)
+        val stream = RtmpStream(context, connection)
+        
+        // Add this to ensure the stream is properly initialized
+        try {
+            // Ensure the stream is initialized
+            stream.attachAudio(null)
+            stream.attachVideo(null)
+        } catch (e: Exception) {
+            android.util.Log.e("ConnectionState", "Error initializing stream: ${e.message}", e)
+        }
+        
+        return stream
     }
 
     fun dispose() {
